@@ -1,13 +1,9 @@
 #include "imudriver.h"
 #include "bno055.h"
-#include "i2c-cache.h"
-#include "ch.h"
 
 #define IMU_HEADING 0
 #define IMU_ROLL 1
 #define IMU_PITCH 2
-
-static struct device_cache *cache = NULL;
 
 static double headingOffset = 0.0;
 static double pitchOffset = 0.0;
@@ -15,6 +11,10 @@ static double rollOffset = 0.0;
 
 static int headingRotationDirection = 0;
 
+
+/******************************************************************************/
+/*                            Locale macro                                    */
+/******************************************************************************/
 #define SYS_TRIGGER_RST_SYS 0x20 /* Reset the device */
 
 #define TIMEOUT_I2C MS2ST(4)
@@ -38,7 +38,7 @@ static I2CDriver* bno055_i2c_driver_ptr;
  * @param[in] reg_addr Address of the register to write to.
  * @param[in] value Value to write into the register.
  *
- * @return An value indicating success, else an error code.
+ * @return A value indicating success, else an error code.
  * @retval MSG_OK Transmission succeeded.
  * @retval MSG_RESET An I2C error occured.
  * @retval MSG_TIMEOUT A timeout occured.
@@ -52,12 +52,22 @@ static msg_t write_register(uint8_t addr, uint8_t reg_addr, uint8_t value) {
 /**
  * @brief Read the content of a register.
  *
+ * @details The BNO055 uses the read-after-write mechanism. You have to first
+ *          write the address of the register you want to read from and then,
+ *          the device will answer with the asked value.
+ *
  * @param[in] addr Address of the device to read from.
  * @param[in] reg_addr Address of the register to read from.
+ * @param[out] data The place where to store the value read.
+ *
+ * @return A value indicating success, else an error code.
+ * @retval MSG_OK Transmission succeeded.
+ * @retval MSG_RESET An I2C error occured.
+ * @retval MSG_TIMEOUT A timeout occured.
  */
-static msg_t read_register(uint8_t addr, uint8_t reg_addr) {
+static msg_t read_register(uint8_t addr, uint8_t reg_addr, uint8_t* data) {
 	i2c_tx_buffer[0] = reg_addr;
-	return i2cMasterTransmitTimeout(&I2CD1, addr, i2c_tx_buffer, 1, i2c_rx_buffer, 2, TIMEOUT_I2C);
+	return i2cMasterTransmitTimeout(bno055_i2c_driver_ptr, addr, i2c_tx_buffer, 1, data, 1, TIMEOUT_I2C);
 }
 
 /**
@@ -66,15 +76,25 @@ static msg_t read_register(uint8_t addr, uint8_t reg_addr) {
 * @param[in] mode The mode to set.
 */
 static void setMode(bno055_opmode_t mode) {
-    I2Cwrite8(BNO055_ADDRESS, BNO055_OPR_MODE_ADDR, mode);
+    write_register(BNO055_ADDRESS, BNO055_OPR_MODE_ADDR, mode);
     chThdSleepMilliseconds(30);
 }
 /******************************************************************************/
 /*                              Public functions                              */
 /******************************************************************************/
-extern int initIMU(void) {
+extern int initIMU(I2CDriver* i2c_driver) {
+    uint8_t id;
+    msg_t ret_msg;
+
+    /* Check parameters */
+    if (i2c_driver == NULL)
+    {
+        return INVALID_PARAMETER;
+    }
+    bno055_i2c_driver_ptr = i2c_driver;
+
     /* Make sure we have the right device */
-    uint8_t id = I2Cread8(BNO055_ADDRESS, BNO055_CHIP_ID_ADDR);
+    ret_msg = read_register(BNO055_ADDRESS, BNO055_CHIP_ID_ADDR, &id);
     if (id != BNO055_ID) {
         //printf("initIMU : ERROR wrong device ID, check IMU is connected to the I2C bus\n");
         return INVALID_DEVICE;
@@ -84,31 +104,29 @@ extern int initIMU(void) {
     setMode(OPERATION_MODE_CONFIG);
 
     /* Reset */
-    I2Cwrite8(BNO055_ADDRESS, BNO055_SYS_TRIGGER_ADDR, SYS_TRIGGER_RST_SYS);
-    while (((uint8_t) I2Cread8(BNO055_ADDRESS, BNO055_CHIP_ID_ADDR)) != BNO055_ID) {
+    write_register(BNO055_ADDRESS, BNO055_SYS_TRIGGER_ADDR, SYS_TRIGGER_RST_SYS);
+    do {
+        msg = read_register(BNO055_ADDRESS, BNO055_CHIP_ID_ADDR, &id);
         chThdSleepMilliseconds(10);
-    }
-    delayMilli(50);
+    } while (id != BNO055);
+    chThdSleepMilliseconds(50);
 
     /* Set to normal power mode */
-    I2Cwrite8(BNO055_ADDRESS, BNO055_PWR_MODE_ADDR, POWER_MODE_NORMAL);
-    delayMilli(10);
+    ret_msg = write_register(BNO055_ADDRESS, BNO055_PWR_MODE_ADDR, POWER_MODE_NORMAL);
+    chThdSleepMilliseconds(10);
 
+/* why ?? */
     I2Cwrite8(BNO055_ADDRESS, BNO055_PAGE_ID_ADDR, 0);
 
+/* why ?? */
     I2Cwrite8(BNO055_ADDRESS, BNO055_SYS_TRIGGER_ADDR, 0x0);
     delayMilli(10);
+
     /* Set the  operating mode (see section 3.3) */
     setMode(OPERATION_MODE_IMUPLUS);
-    delayMilli(100);
+    chThdSleepMilliseconds(100);
 
-    /* set up the cache system */
-    cache = initCache(BNO055_ADDRESS, 0, 3, 0, 0);
-    cache->r16_cmds[IMU_HEADING] = BNO055_EULER_H_LSB_ADDR;
-    cache->r16_cmds[IMU_ROLL] = BNO055_EULER_R_LSB_ADDR;
-    cache->r16_cmds[IMU_PITCH] = BNO055_EULER_P_LSB_ADDR;
-
-    return 0;
+    return NO_ERROR;
 }
 
 double getHeading() {
