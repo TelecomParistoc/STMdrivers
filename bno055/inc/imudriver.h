@@ -2,20 +2,17 @@
  * keeps track of the robot's relative orientation
  * functionnalities :
  *  > get/set heading, roll and pitch
- *
- *  Note : in order to free the programmer from I2C ressource sharing
- * considerations, read may be cached and write may be delayed when write/read
- * are made too often and might saturate the I2C bus.
  */
 
-#ifndef I2CIMUDRIVER_H
-#define I2CIMUDRIVER_H
+#ifndef IMUDRIVER_H
+#define IMUDRIVER_H
 
-#include "ch.h"
+#include "hal.h"
 
-#define NO_ERROR 0
-#define INVALID_PARAMETER -1
-#define INVALID_DEVICE -2
+typedef enum {
+    CLOCKWISE = 0U,
+    COUNTER_CLOCKWISE = 1U
+} imu_rotation_direction_t;
 
 /**
  * @brief Initialize the bno055 and set it in IMU mode (fusion between accelerometer and gyro).
@@ -33,20 +30,82 @@
  */
 extern int initIMU(I2CDriver* i2c_driver);
 
-/* get/set euler angles. the angles are relative to the power-on position of the
- * module. All angles are in degrees from 0 to 360 (excluded)
- * WARNING : setting angles DOES NOT MOVE the robot, it offsets the angle*/
+/**
+ * @brief Change heading rotation direction.
+ *
+ * @details Use this function to change the rotation direction as measured by
+ *          the IMU. It's useful for team change.
+ *          The default value is CLOCKWISE.
+ *
+ * @param[in] direction The new direction.
+ */
+extern void setHeadingRotationDirection(imu_rotation_direction_t direction);
 
-double getHeading();
-void setHeading(double heading);
-double getPitch();
-void setPitch(double pitch);
-double getRoll();
-void setRoll(double roll);
+/**
+ * brief Get the current heading rotation direction.
+ *
+ * @return The current heading rotation direction.
+ *
+ * @retval CLOCKWISE
+ * @retval COUNTER_CLOCKWISE
+ */
+extern imu_rotation_direction_t getHeadingRotationDirection(void);
 
-/* change heading rotation direction (usefull for team change). 0 is clockwise
- * (default) and 1 is anticlockwise */
-void setHeadingRotationDirection(int direction);
-int getHeadingRotationDirection();
+/**
+ * @brief Get heading angle.
+ *
+ * @details Get the heading angle (in degrees) relative to the power-on position
+ *          of the module.
+ *
+ * @return The relative heading angle in degrees (from 0 to 360 excluded).
+ */
+extern double getHeading(void);
 
-#endif
+/**
+ * @brief Set the euler heading angle offset.
+ *
+ * @details WARNING : setting angles DOES NOT MOVE the robot, it offsets the angle.
+ *
+ * @param[in] heading The current heading angle.
+ */
+extern void setHeading(double heading);
+
+/**
+ * @brief Get pitch angle.
+ *
+ * @details Get the pitch angle (in degrees) relative to the power-on position
+ *          of the module.
+ *
+ * @return The relative pitch angle in degrees (from 0 to 360 excluded).
+ */
+extern double getPitch(void);
+
+/**
+ * @brief Set the euler pitch angle offset.
+ *
+ * @details WARNING : setting angles DOES NOT MOVE the robot, it offsets the angle.
+ *
+ * @param[in] pitch The current pitch angle.
+ */
+extern void setPitch(double pitch);
+
+/**
+ * @brief Get roll angle.
+ *
+ * @details Get the roll angle (in degrees) relative to the power-on position
+ *          of the module.
+ *
+ * @return The relative pitch angle in degrees (from 0 to 360 excluded).
+ */
+extern double getRoll(void);
+
+/**
+ * @brief Set the euler roll angle offset.
+ *
+ * @details WARNING : setting angles DOES NOT MOVE the robot, it offsets the angle.
+ *
+ * @param[in] roll The current roll angle.
+ */
+extern void setRoll(double roll);
+
+#endif /* IMUDRIVER_H */
