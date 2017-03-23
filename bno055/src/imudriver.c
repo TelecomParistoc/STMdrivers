@@ -12,6 +12,12 @@
 #define TIMEOUT_I2C MS2ST(4)
 #define I2C_TX_BUFFER_SIZE 5U
 
+#define DEGREE_MASK 0b11111011U
+#define RADIAN_MASK 0b00000100U
+
+#define MAX_VALUE_DEGREE 5760
+#define MAX_VALUE_RADIAN 324000
+
 #define MAX_ANGLE 360
 
 /******************************************************************************/
@@ -41,7 +47,9 @@ static I2CDriver* bno055_i2c_driver_ptr;
  */
 static imu_rotation_direction_t headingRotationDirection = CLOCKWISE;
 
-static double headingOffset = 0.0;
+static int MAX_VALUE = MAX_VALUE_DEGREE;
+
+static int16_t headingOffset = 0;
 
 static double pitchOffset = 0.0;
 
@@ -229,6 +237,26 @@ extern int initIMU(I2CDriver* i2c_driver) {
     return NO_ERROR;
 }
 
+extern int32_t setUnit(imu_unit_t unit) {
+	uint8_t unit_reg;
+	int32_t status;
+
+	status = read_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, &unit_reg, 1);
+	if (status != NO_ERROR) {
+		return status;
+	}
+
+	if (unit == DEGREE) {
+		unit_reg &= DEGREE_MASK;
+		MAX_VALUE = MAX_VALUE_DEGREE;
+	} else {
+		unit_reg |= RADIAN_MASK;
+		MAX_VALUE = MAX_VALUE_RADIAN;
+	}
+
+	return write_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, unit_reg);
+}
+
 extern void setHeadingRotationDirection(imu_rotation_direction_t direction) {
 	headingRotationDirection = direction;
 }
@@ -237,39 +265,34 @@ extern imu_rotation_direction_t getHeadingRotationDirection(void) {
 	return headingRotationDirection;
 }
 
-extern double getHeading(void) {
+extern int16_t getHeading(void) {
     angle_t raw_angle;
 	int32_t status;
-	double result;
+	int16_t angle;
 
 	status = read_register(BNO055_ADDRESS, BNO055_EULER_H_MSB_ADDR, &raw_angle.msb, 1);
 
-	if (status == NO_ERROR) {
+	if (status != NO_ERROR)	{
+		angle = ANGLE_ERROR;
+	} else {
+
 		status = read_register(BNO055_ADDRESS, BNO055_EULER_H_LSB_ADDR, &raw_angle.lsb, 1);
-		if (status == NO_ERROR) {
-			/* why this mask ?*/
-			raw_angle.angle &= 0x1FFF;
-			/* 1 degree = 16 LSB */
-			result = raw_angle.angle / 16.0;
 
-			if (headingRotationDirection)
-				result = MAX_ANGLE - result;
+		if (status != NO_ERROR) {
+			angle = ANGLE_ERROR;
+		} else {
+			raw_angle.angle -= headingOffset;
+			raw_angle.angle %= MAX_VALUE;
 
-			result = result - headingOffset;
-
-			if (result >= MAX_ANGLE) {
-				result -= MAX_ANGLE;
-			} else if (result < 0) {
-				result += MAX_ANGLE;
-			}
+			angle = raw_angle.angle;
 		}
 	}
 
-    return result;
+    return angle;
 }
 
-extern void setHeading(double heading) {
-    if (heading >= 0 && heading < MAX_ANGLE) {
+extern void setHeading(int16_t heading) {
+    if (heading >= 0 && heading < MAX_VALUE) {
         headingOffset = 0;
         headingOffset = getHeading() - heading;
     }
