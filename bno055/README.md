@@ -29,3 +29,8 @@ in the future to provide other functions, according to the needs.
   - (alpha + 180) % 360 (in degrees) if color2
 
 This way, angles will be the same in both cases.
+
+# I2C configuration for the BNO055
+ - Standard mode and fast mode supported
+ - 7-bit address
+ - address 0x28

@@ -3,7 +3,7 @@
 #include "tr_types.h"
 
 /******************************************************************************/
-/*                            Locale macro                                    */
+/*                            Local macro                                    */
 /******************************************************************************/
 #define SYS_TRIGGER_RST_SYS 0x20U /* Reset the device */
 #define SYS_TRIGGER_INTERNAL_OSC 0x00 /* Use internal oscillator */
@@ -15,22 +15,21 @@
 #define DEGREE_MASK 0b11111011U
 #define RADIAN_MASK 0b00000100U
 
+#define ANDROID_MASK 0b10000000U
+#define WINDOWS_MASK 0b01111111U
+
 #define MAX_VALUE_DEGREE 5760
 #define MAX_VALUE_RADIAN 324000
 
 #define MAX_ANGLE 360
 
 /******************************************************************************/
-/*                            Locale type                                     */
+/*                            Local type                                     */
 /******************************************************************************/
-typedef union {
-	int16_t angle;
-	uint8_t msb;
-	uint8_t lsb;
-} angle_t;
+/* without object */
 
 /******************************************************************************/
-/*                             Locale variable                                */
+/*                             Local variable                                */
 /******************************************************************************/
 /**
  * Buffer to store the data to send through the I2C bus.
@@ -42,18 +41,13 @@ static uint8_t i2c_tx_buffer[I2C_TX_BUFFER_SIZE];
  */
 static I2CDriver* bno055_i2c_driver_ptr;
 
-/**
- * Current heading rotation direction.
- */
-static imu_rotation_direction_t headingRotationDirection = CLOCKWISE;
-
 static int MAX_VALUE = MAX_VALUE_DEGREE;
 
 static int16_t headingOffset = 0;
 
-static double pitchOffset = 0.0;
+static int16_t pitchOffset = 0;
 
-static double rollOffset = 0.0;
+static int16_t rollOffset = 0;
 
 /******************************************************************************/
 /*                             Private functions                              */
@@ -180,7 +174,7 @@ extern int initIMU(I2CDriver* i2c_driver) {
 	/* Make sure we have the right device */
 	ret_msg = read_register(BNO055_ADDRESS, BNO055_CHIP_ID_ADDR, &id, 1);
 	if (ret_msg != NO_ERROR) {
-		return ret_msg;
+		return 1;
 	} else if (id != BNO055_ID) {
 		return INVALID_DEVICE;
 	}
@@ -188,49 +182,52 @@ extern int initIMU(I2CDriver* i2c_driver) {
 	/* Switch to config mode (just in case since this is the default) */
 	ret_msg = setMode(OPERATION_MODE_CONFIG);
 	if (ret_msg != NO_ERROR) {
-		return ret_msg;
+		return 2;
 	}
 
 	/* Reset */
 	ret_msg = write_register(BNO055_ADDRESS, BNO055_SYS_TRIGGER_ADDR, SYS_TRIGGER_RST_SYS);
 	if (ret_msg != NO_ERROR) {
-		return ret_msg;
+		return 3;
 	}
+
+	chThdSleepMilliseconds(500);
+	id = 0;
 
 	do {
 		ret_msg = read_register(BNO055_ADDRESS, BNO055_CHIP_ID_ADDR, &id, 1);
 		chThdSleepMilliseconds(10);
-	} while ((id != BNO055_ID) && (ret_msg == NO_ERROR));
+	} while ((id != BNO055_ID));
 
 	if (ret_msg != NO_ERROR) {
-		return ret_msg;
+		return 4;
 	}
 	chThdSleepMilliseconds(50);
 
 	/* Set to normal power mode */
 	ret_msg = write_register(BNO055_ADDRESS, BNO055_PWR_MODE_ADDR, POWER_MODE_NORMAL);
 	if (ret_msg != NO_ERROR) {
-		return ret_msg;
+		return 5;
 	}
 	chThdSleepMilliseconds(10);
 
 	/* why ?? */
 	ret_msg = write_register(BNO055_ADDRESS, BNO055_PAGE_ID_ADDR, PAGE_0);
 	if (ret_msg != NO_ERROR) {
-		return ret_msg;
+		return 6;
 	}
 
 	/* why ?? */
 	ret_msg = write_register(BNO055_ADDRESS, BNO055_SYS_TRIGGER_ADDR, SYS_TRIGGER_INTERNAL_OSC);
 	if (ret_msg != NO_ERROR) {
-		return ret_msg;
+		return 7;
 	}
 	chThdSleepMilliseconds(10);
 
 	/* Set the operating mode (see section 3.3) */
 	ret_msg = setMode(OPERATION_MODE_IMUPLUS);
 	if (ret_msg != NO_ERROR) {
-		return ret_msg;
+		return 8;
 	}
 	chThdSleepMilliseconds(100);
 
@@ -257,108 +254,184 @@ extern int32_t setUnit(imu_unit_t unit) {
 	return write_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, unit_reg);
 }
 
-extern void setHeadingRotationDirection(imu_rotation_direction_t direction) {
-	headingRotationDirection = direction;
-}
+extern int32_t setFormat(imu_format_t format) {
+	uint8_t unit_reg;
+	int32_t status;
 
-extern imu_rotation_direction_t getHeadingRotationDirection(void) {
-	return headingRotationDirection;
+	status = read_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, &unit_reg, 1);
+	if (status != NO_ERROR) {
+		return status;
+	}
+
+	if (format == ANDROID) {
+		unit_reg |= ANDROID_MASK;
+	} else {
+		unit_reg &= WINDOWS_MASK;
+	}
+
+	return write_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, unit_reg);
 }
 
 extern int16_t getHeading(void) {
-    angle_t raw_angle;
+    static int16_t raw_angle;
 	int32_t status;
 	int16_t angle;
 
-	status = read_register(BNO055_ADDRESS, BNO055_EULER_H_MSB_ADDR, &raw_angle.msb, 1);
+	status = read_register(BNO055_ADDRESS, BNO055_EULER_H_MSB_ADDR, ((uint8_t*)&raw_angle) + 1, 1);
 
 	if (status != NO_ERROR)	{
 		angle = ANGLE_ERROR;
 	} else {
 
-		status = read_register(BNO055_ADDRESS, BNO055_EULER_H_LSB_ADDR, &raw_angle.lsb, 1);
+		status = read_register(BNO055_ADDRESS, BNO055_EULER_H_LSB_ADDR, (uint8_t*)&raw_angle, 1);
 
 		if (status != NO_ERROR) {
 			angle = ANGLE_ERROR;
 		} else {
-			raw_angle.angle -= headingOffset;
-			raw_angle.angle %= MAX_VALUE;
+			raw_angle -= headingOffset;
 
-			angle = raw_angle.angle;
+			if (raw_angle < 0) {
+				raw_angle += MAX_VALUE;
+			}
+
+			angle = raw_angle % MAX_VALUE;
 		}
 	}
 
     return angle;
 }
 
-extern void setHeading(int16_t heading) {
-    if (heading >= 0 && heading < MAX_VALUE) {
+extern int32_t setHeading(int16_t heading) {
+	int32_t status;
+	int16_t tmp[5];
+	int16_t average;
+	uint8_t i;
+
+	if (heading >= 0 && heading < MAX_VALUE) {
+		do {
+			average = 0;
+			for (i = 0; i < 5; ++i) {
+				tmp[i] = getHeading();
+				average += tmp[i];
+			}
+			average /= 5;
+		} while (average != tmp[0]);
+
         headingOffset = 0;
         headingOffset = getHeading() - heading;
-    }
+		status = NO_ERROR;
+    } else {
+		status = INVALID_PARAMETER;
+	}
+
+	return status;
 }
 
-extern double getPitch(void) {
-	angle_t raw_angle;
+extern int16_t getPitch(void) {
+	static int16_t raw_angle;
 	int32_t status;
-	double result;
+	int16_t angle;
 
-	status = read_register(BNO055_ADDRESS, BNO055_EULER_P_MSB_ADDR, &raw_angle.msb, 1);
+	status = read_register(BNO055_ADDRESS, BNO055_EULER_P_MSB_ADDR, ((uint8_t*)&raw_angle) + 1, 1);
 
-	if (status == NO_ERROR) {
-		status = read_register(BNO055_ADDRESS, BNO055_EULER_P_LSB_ADDR, &raw_angle.lsb, 1);
-		if (status == NO_ERROR) {
-			/* 1 degree = 16 LSB */
-			result = raw_angle.angle / 16.0;
+	if (status != NO_ERROR) {
+		angle = ANGLE_ERROR;
+	} else {
 
-			result = result - pitchOffset;
+		status = read_register(BNO055_ADDRESS, BNO055_EULER_P_LSB_ADDR, (uint8_t*)&raw_angle, 1);
 
-			if(result >= MAX_ANGLE) {
-				result -= MAX_ANGLE;
-			} else if(result < 0) {
-				result += MAX_ANGLE;
+		if (status != NO_ERROR) {
+			angle = ANGLE_ERROR;
+		} else {
+			raw_angle -= pitchOffset;
+
+			while (raw_angle < -(MAX_VALUE / 2)) {
+				raw_angle += MAX_VALUE;
 			}
+
+			angle = raw_angle;
 		}
 	}
-    return result;
+
+    return angle;
 }
 
-extern void setPitch(double pitch) {
-    if (pitch >= 0 && pitch < MAX_ANGLE) {
+extern int32_t setPitch(int16_t pitch) {
+	int32_t status;
+	int16_t tmp[5];
+	int16_t average;
+	uint8_t i;
+
+	if ((pitch >= -(MAX_VALUE / 2)) && (pitch < MAX_VALUE / 2)) {
+		do {
+			average = 0;
+			for (i = 0; i < 5; i++) {
+				tmp[i] = getPitch();
+				average += tmp[i];
+			}
+			average /= 5;
+		} while (average != tmp[0]);
+
         pitchOffset = 0;
         pitchOffset = getPitch() - pitch;
-    }
+		status = NO_ERROR;
+    } else {
+		status = INVALID_PARAMETER;
+	}
+
+	return status;
 }
 
-extern double getRoll(void) {
-    angle_t raw_angle;
+extern int16_t getRoll(void) {
+    static int16_t raw_angle;
 	int32_t status;
-	double result;
+	int16_t angle;
 
-	status = read_register(BNO055_ADDRESS, BNO055_EULER_R_MSB_ADDR, &raw_angle.msb, 1);
+	status = read_register(BNO055_ADDRESS, BNO055_EULER_R_MSB_ADDR, ((uint8_t*)&raw_angle) + 1, 1);
 
-	if (status == NO_ERROR) {
-		status = read_register(BNO055_ADDRESS, BNO055_EULER_R_LSB_ADDR, &raw_angle.lsb, 1);
-		if (status == NO_ERROR) {
-			/* 1 degree = 16 LSB */
-			result = raw_angle.angle / 16.0;
+	if (status != NO_ERROR) {
+		angle = ANGLE_ERROR;
+	} else {
+		status = read_register(BNO055_ADDRESS, BNO055_EULER_R_LSB_ADDR, (uint8_t*)&raw_angle, 1);
 
-			result = result - rollOffset;
+		if (status != NO_ERROR) {
+			angle = ANGLE_ERROR;
+		} else {
+			raw_angle -= rollOffset;
 
-			if(result >= MAX_ANGLE) {
-				result -= MAX_ANGLE;
-			} else if(result < 0) {
-				result += MAX_ANGLE;
+			while (raw_angle < -(MAX_VALUE / 4)) {
+				raw_angle += MAX_VALUE / 2;
 			}
+
+			angle = raw_angle;
 		}
 	}
 
-    return result;
+    return angle;
 }
 
-extern void setRoll(double roll) {
-    if (roll >= 0 && roll < MAX_ANGLE) {
+extern int32_t setRoll(int16_t roll) {
+	int32_t status;
+	int16_t tmp[5];
+	int16_t average;
+	uint8_t i;
+
+	if ((roll >= -(MAX_VALUE / 4)) && (roll < (MAX_VALUE / 4))) {
+		do {
+			average = 0;
+			for (i = 0; i < 5; i++) {
+				tmp[i] = getRoll();
+				average += tmp[i];
+			}
+			average /= 5;
+		} while (average != tmp[0]);
+
         rollOffset = 0;
         rollOffset = getRoll() - roll;
-    }
+		status = NO_ERROR;
+    } else {
+		status = INVALID_PARAMETER;
+	}
+
+	return status;
 }
