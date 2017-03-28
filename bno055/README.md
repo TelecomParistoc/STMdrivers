@@ -21,6 +21,12 @@ in the future to provide other functions, according to the needs.
   - Call the **setHeading()** function to fix the initial heading of the device.
   - Then, call the **getHeading()**,  **getRoll()** & **getPitch()** function.
 
+## Documentation
+   To generate a complete documentation of the API, you can use Doxygen.
+   Simply run ```doxygen Doxyfile``` in the root directory of the repository and
+   the documentation will be generated in the **/doc** directory.
+   Open **/doc/html/index.html** with your favorite web browser to read the
+   doc.
 
 ## For the robotic cup:
   When initialising the robot, once we know which color (and thus side) we are,
