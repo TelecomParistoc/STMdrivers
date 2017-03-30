@@ -14,22 +14,21 @@
 
 #define DEGREE_MASK 0b11111011U
 #define RADIAN_MASK 0b00000100U
+#define UNIT_MASK   0x04U
+#define UNIT_OFFSET 2U
 
 #define ANDROID_MASK 0b10000000U
 #define WINDOWS_MASK 0b01111111U
-
-#define MAX_VALUE_DEGREE 5760
-#define MAX_VALUE_RADIAN 324000
-
-#define MAX_ANGLE 360
+#define FORMAT_MASK  0b10000000U
+#define FORMAT_OFFSET 7U
 
 /******************************************************************************/
-/*                            Local type                                     */
+/*                            Local type                                      */
 /******************************************************************************/
 /* without object */
 
 /******************************************************************************/
-/*                             Local variable                                */
+/*                             Local variable                                 */
 /******************************************************************************/
 /**
  * Buffer to store the data to send through the I2C bus.
@@ -41,13 +40,14 @@ static uint8_t i2c_tx_buffer[I2C_TX_BUFFER_SIZE];
  */
 static I2CDriver* bno055_i2c_driver_ptr;
 
-static int MAX_VALUE = MAX_VALUE_DEGREE;
-
-static int16_t headingOffset = 0;
-
-static int16_t pitchOffset = 0;
-
-static int16_t rollOffset = 0;
+/******************************************************************************/
+/*                           Global variables                                 */
+/******************************************************************************/
+const I2CConfig imu_i2c_conf = {
+	0x20420F13, /* cf table 141 in reference manual for explanation */
+	0x00000001, /* peripheral enable */
+	0 /* nothing to do, all fields controlled by the driver */
+};
 
 /******************************************************************************/
 /*                             Private functions                              */
@@ -238,6 +238,11 @@ extern int32_t setUnit(imu_unit_t unit) {
 	uint8_t unit_reg;
 	int32_t status;
 
+	status = setMode(OPERATION_MODE_CONFIG);
+	if (status != NO_ERROR) {
+		return status;
+	}
+
 	status = read_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, &unit_reg, 1);
 	if (status != NO_ERROR) {
 		return status;
@@ -245,18 +250,42 @@ extern int32_t setUnit(imu_unit_t unit) {
 
 	if (unit == DEGREE) {
 		unit_reg &= DEGREE_MASK;
-		MAX_VALUE = MAX_VALUE_DEGREE;
 	} else {
 		unit_reg |= RADIAN_MASK;
-		MAX_VALUE = MAX_VALUE_RADIAN;
 	}
 
-	return write_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, unit_reg);
+	status = write_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, unit_reg);
+	if (status != NO_ERROR) {
+		return status;
+	}
+
+	return setMode(OPERATION_MODE_IMUPLUS);
+}
+
+extern int32_t getUnit(imu_unit_t* unit)
+{
+
+	int32_t status;
+	uint8_t unit_reg;
+
+	if (unit == NULL) {
+		status = INVALID_PARAMETER;
+	} else {
+		status = read_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, &unit_reg, 1);
+		*unit = (imu_unit_t)((unit_reg & UNIT_MASK) >> UNIT_OFFSET);
+	}
+
+	return status;
 }
 
 extern int32_t setFormat(imu_format_t format) {
 	uint8_t unit_reg;
 	int32_t status;
+
+	status = setMode(OPERATION_MODE_CONFIG);
+	if (status != NO_ERROR) {
+		return status;
+	}
 
 	status = read_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, &unit_reg, 1);
 	if (status != NO_ERROR) {
@@ -269,169 +298,80 @@ extern int32_t setFormat(imu_format_t format) {
 		unit_reg &= WINDOWS_MASK;
 	}
 
-	return write_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, unit_reg);
+	status = write_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, unit_reg);
+	if (status != NO_ERROR) {
+		return status;
+	}
+
+	return setMode(OPERATION_MODE_IMUPLUS);
 }
 
-extern int16_t getHeading(void) {
-    static int16_t raw_angle;
+extern int32_t getFormat(imu_format_t* format)
+{
+	uint8_t unit_reg;
 	int32_t status;
-	int16_t angle;
 
+	status = read_register(BNO055_ADDRESS, BNO055_UNIT_SEL_ADDR, &unit_reg, 1);
+	*format = (imu_format_t)((unit_reg & FORMAT_MASK) >> FORMAT_OFFSET);
+
+	return status;
+}
+
+extern int16_t getHeading(void)
+{
+	static int16_t raw_angle;
+	int16_t status;
 	status = read_register(BNO055_ADDRESS, BNO055_EULER_H_MSB_ADDR, ((uint8_t*)&raw_angle) + 1, 1);
 
 	if (status != NO_ERROR)	{
-		angle = ANGLE_ERROR;
+		raw_angle = ANGLE_ERROR;
 	} else {
 
 		status = read_register(BNO055_ADDRESS, BNO055_EULER_H_LSB_ADDR, (uint8_t*)&raw_angle, 1);
 
 		if (status != NO_ERROR) {
-			angle = ANGLE_ERROR;
-		} else {
-			raw_angle -= headingOffset;
-
-			if (raw_angle < 0) {
-				raw_angle += MAX_VALUE;
-			}
-
-			angle = raw_angle % MAX_VALUE;
+			raw_angle = ANGLE_ERROR;
 		}
 	}
 
-    return angle;
-}
-
-extern int32_t setHeading(int16_t heading) {
-	int32_t status;
-	int16_t tmp[5];
-	int16_t average;
-	uint8_t i;
-
-	if (heading >= 0 && heading < MAX_VALUE) {
-		do {
-			average = 0;
-			for (i = 0; i < 5; ++i) {
-				tmp[i] = getHeading();
-				average += tmp[i];
-			}
-			average /= 5;
-		} while (average != tmp[0]);
-
-        headingOffset = 0;
-        headingOffset = getHeading() - heading;
-		status = NO_ERROR;
-    } else {
-		status = INVALID_PARAMETER;
-	}
-
-	return status;
+    return raw_angle;
 }
 
 extern int16_t getPitch(void) {
 	static int16_t raw_angle;
 	int32_t status;
-	int16_t angle;
 
 	status = read_register(BNO055_ADDRESS, BNO055_EULER_P_MSB_ADDR, ((uint8_t*)&raw_angle) + 1, 1);
 
 	if (status != NO_ERROR) {
-		angle = ANGLE_ERROR;
+		raw_angle = ANGLE_ERROR;
 	} else {
 
 		status = read_register(BNO055_ADDRESS, BNO055_EULER_P_LSB_ADDR, (uint8_t*)&raw_angle, 1);
 
 		if (status != NO_ERROR) {
-			angle = ANGLE_ERROR;
-		} else {
-			raw_angle -= pitchOffset;
-
-			while (raw_angle < -(MAX_VALUE / 2)) {
-				raw_angle += MAX_VALUE;
-			}
-
-			angle = raw_angle;
+			raw_angle = ANGLE_ERROR;
 		}
 	}
 
-    return angle;
-}
-
-extern int32_t setPitch(int16_t pitch) {
-	int32_t status;
-	int16_t tmp[5];
-	int16_t average;
-	uint8_t i;
-
-	if ((pitch >= -(MAX_VALUE / 2)) && (pitch < MAX_VALUE / 2)) {
-		do {
-			average = 0;
-			for (i = 0; i < 5; i++) {
-				tmp[i] = getPitch();
-				average += tmp[i];
-			}
-			average /= 5;
-		} while (average != tmp[0]);
-
-        pitchOffset = 0;
-        pitchOffset = getPitch() - pitch;
-		status = NO_ERROR;
-    } else {
-		status = INVALID_PARAMETER;
-	}
-
-	return status;
+    return raw_angle;
 }
 
 extern int16_t getRoll(void) {
     static int16_t raw_angle;
 	int32_t status;
-	int16_t angle;
 
 	status = read_register(BNO055_ADDRESS, BNO055_EULER_R_MSB_ADDR, ((uint8_t*)&raw_angle) + 1, 1);
 
 	if (status != NO_ERROR) {
-		angle = ANGLE_ERROR;
+		raw_angle = ANGLE_ERROR;
 	} else {
 		status = read_register(BNO055_ADDRESS, BNO055_EULER_R_LSB_ADDR, (uint8_t*)&raw_angle, 1);
 
 		if (status != NO_ERROR) {
-			angle = ANGLE_ERROR;
-		} else {
-			raw_angle -= rollOffset;
-
-			while (raw_angle < -(MAX_VALUE / 4)) {
-				raw_angle += MAX_VALUE / 2;
-			}
-
-			angle = raw_angle;
+			raw_angle = ANGLE_ERROR;
 		}
 	}
 
-    return angle;
-}
-
-extern int32_t setRoll(int16_t roll) {
-	int32_t status;
-	int16_t tmp[5];
-	int16_t average;
-	uint8_t i;
-
-	if ((roll >= -(MAX_VALUE / 4)) && (roll < (MAX_VALUE / 4))) {
-		do {
-			average = 0;
-			for (i = 0; i < 5; i++) {
-				tmp[i] = getRoll();
-				average += tmp[i];
-			}
-			average /= 5;
-		} while (average != tmp[0]);
-
-        rollOffset = 0;
-        rollOffset = getRoll() - roll;
-		status = NO_ERROR;
-    } else {
-		status = INVALID_PARAMETER;
-	}
-
-	return status;
+    return raw_angle;
 }
