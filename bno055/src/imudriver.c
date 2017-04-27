@@ -46,7 +46,8 @@ static I2CDriver* bno055_i2c_driver_ptr;
 const I2CConfig imu_i2c_conf = {
 	0x20420F13, /* cf table 141 in reference manual for explanation */
 	0x00000001, /* peripheral enable */
-	0 /* nothing to do, all fields controlled by the driver */
+	0, /* nothing to do, all fields controlled by the driver */
+	NULL
 };
 
 /******************************************************************************/
@@ -63,7 +64,8 @@ const I2CConfig imu_i2c_conf = {
  * @return A value indicating success, else an error code.
  * @retval NO_ERROR Transmission succeeded.
  * @retval I2C_RESET An I2C error occured.
- * @retval I2C_TIMEOUT A timeout occured.
+ * @retval TIMEOUT A timeout occured.
+ * @retval INVALID_PARAMETER I2C driver not ready.
  * @retval UNKNOWN_ERROR An unknown error occured.
  */
 static int32_t write_register(uint8_t addr, uint8_t reg_addr, uint8_t value) {
@@ -71,14 +73,14 @@ static int32_t write_register(uint8_t addr, uint8_t reg_addr, uint8_t value) {
 
 	i2c_tx_buffer[0] = reg_addr;
 	i2c_tx_buffer[1] = value;
-	status = i2cMasterTransmitTimeout(bno055_i2c_driver_ptr, addr, i2c_tx_buffer, 2, NULL, 0, TIMEOUT_I2C);
-
-	switch (status) {
+	if (bno055_i2c_driver_ptr->state == I2C_READY) {
+		status = i2cMasterTransmitTimeout(bno055_i2c_driver_ptr, addr, i2c_tx_buffer, 2, NULL, 0, TIMEOUT_I2C);
+		switch (status) {
 		case MSG_RESET:
 			status = I2C_RESET;
 			break;
 		case MSG_TIMEOUT:
-			status = I2C_TIMEOUT;
+			status = TIMEOUT;
 			break;
 		case MSG_OK:
 			status = NO_ERROR;
@@ -86,6 +88,9 @@ static int32_t write_register(uint8_t addr, uint8_t reg_addr, uint8_t value) {
 		default:
 			status = UNKNOWN_ERROR;
 			break;
+		}
+	} else {
+		status = INVALID_PARAMETER;
 	}
 
 	return status;
@@ -113,7 +118,7 @@ static int32_t write_register(uint8_t addr, uint8_t reg_addr, uint8_t value) {
 static int32_t read_register(uint8_t addr, uint8_t reg_addr, uint8_t* data, uint8_t size) {
 	int32_t status;
 
-	if ((data == NULL) || (size == 0)) {
+	if ((data == NULL) || (size == 0) || (bno055_i2c_driver_ptr->state != I2C_READY)) {
 		status = INVALID_PARAMETER;
 	} else {
 		i2c_tx_buffer[0] = reg_addr;
