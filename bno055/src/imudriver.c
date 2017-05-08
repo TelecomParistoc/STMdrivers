@@ -380,3 +380,137 @@ extern int16_t getRoll(void) {
 
     return raw_angle;
 }
+
+extern int16_t getAccelerationX(void) {
+	static int16_t acceleration_x;
+	int32_t status;
+
+	status = read_register(BNO055_ADDRESS, BNO055_ACCEL_DATA_X_MSB_ADDR, ((uint8_t*)&acceleration_x) + 1, 1);
+
+	if (status != NO_ERROR) {
+		acceleration_x = ACCELERATION_ERROR;
+	} else {
+		status = read_register(BNO055_ADDRESS, BNO055_ACCEL_DATA_X_LSB_ADDR, (uint8_t*)&acceleration_x, 1);
+
+		if (status != NO_ERROR) {
+			acceleration_x = ACCELERATION_ERROR;
+		}
+	}
+
+	return acceleration_x;
+}
+
+extern int16_t getAccelerationY(void) {
+	static int16_t acceleration_y;
+	int32_t status;
+
+	status = read_register(BNO055_ADDRESS, BNO055_ACCEL_DATA_Y_MSB_ADDR, ((uint8_t*)&acceleration_y) + 1, 1);
+
+	if (status != NO_ERROR) {
+		acceleration_y = ACCELERATION_ERROR;
+	} else {
+		status = read_register(BNO055_ADDRESS, BNO055_ACCEL_DATA_Y_LSB_ADDR, (uint8_t*)&acceleration_y, 1);
+
+		if (status != NO_ERROR) {
+			acceleration_y = ACCELERATION_ERROR;
+		}
+	}
+
+	return acceleration_y;
+}
+
+extern int16_t getAccelerationZ(void) {
+	static int16_t acceleration_z;
+	int32_t status;
+
+	status = read_register(BNO055_ADDRESS, BNO055_ACCEL_DATA_Z_MSB_ADDR, ((uint8_t*)&acceleration_z) + 1, 1);
+
+	if (status != NO_ERROR) {
+		acceleration_z = ACCELERATION_ERROR;
+	} else {
+		status = read_register(BNO055_ADDRESS, BNO055_ACCEL_DATA_Z_LSB_ADDR, (uint8_t*)&acceleration_z, 1);
+
+		if (status != NO_ERROR) {
+			acceleration_z = ACCELERATION_ERROR;
+		}
+	}
+
+	return acceleration_z;
+}
+
+extern int16_t getGravityVectorX(void) {
+	static int16_t gravity_x;
+	int32_t status;
+
+	status = read_register(BNO055_ADDRESS, BNO055_GRAVITY_DATA_X_MSB_ADDR, ((uint8_t*)&gravity_x) + 1, 1);
+
+	if (status != NO_ERROR) {
+		gravity_x = ACCELERATION_ERROR;
+	} else {
+		status = read_register(BNO055_ADDRESS, BNO055_GRAVITY_DATA_X_LSB_ADDR, (uint8_t*)&gravity_x, 1);
+
+		if (status != NO_ERROR) {
+			gravity_x = ACCELERATION_ERROR;
+		}
+	}
+
+	return gravity_x;
+}
+
+extern int16_t getGravityVectorY(void) {
+	static int16_t gravity_y;
+	int32_t status;
+
+	status = read_register(BNO055_ADDRESS, BNO055_GRAVITY_DATA_Y_MSB_ADDR, ((uint8_t*)&gravity_y) + 1, 1);
+
+	if (status != NO_ERROR) {
+		gravity_y = ACCELERATION_ERROR;
+	} else {
+		status = read_register(BNO055_ADDRESS, BNO055_GRAVITY_DATA_Y_LSB_ADDR, (uint8_t*)&gravity_y, 1);
+
+		if (status != NO_ERROR) {
+			gravity_y = ACCELERATION_ERROR;
+		}
+	}
+
+	return gravity_y;
+}
+
+extern int16_t getGravityVectorZ(void) {
+	static int16_t gravity_z;
+	int32_t status;
+
+	status = read_register(BNO055_ADDRESS, BNO055_GRAVITY_DATA_Z_MSB_ADDR, ((uint8_t*)&gravity_z) + 1, 1);
+
+	if (status != NO_ERROR) {
+		gravity_z = ACCELERATION_ERROR;
+	} else {
+		status = read_register(BNO055_ADDRESS, BNO055_GRAVITY_DATA_Z_LSB_ADDR, (uint8_t*)&gravity_z, 1);
+
+		if (status != NO_ERROR) {
+			gravity_z = ACCELERATION_ERROR;
+		}
+	}
+
+	return gravity_z;
+}
+
+
+extern int16_t getLinearAccelerationX(void) {
+	static int16_t acceleration;
+	int32_t status;
+
+	status = read_register(BNO055_ADDRESS, BNO055_LINEAR_ACCEL_DATA_X_MSB_ADDR, ((uint8_t*)&acceleration) + 1, 1);
+
+	if (status != NO_ERROR) {
+		acceleration = ACCELERATION_ERROR;
+	} else {
+		status = read_register(BNO055_ADDRESS, BNO055_LINEAR_ACCEL_DATA_X_LSB_ADDR, (uint8_t*)&acceleration, 1);
+
+		if (status != NO_ERROR) {
+			acceleration = ACCELERATION_ERROR;
+		}
+	}
+
+	return acceleration;
+}

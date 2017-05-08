@@ -12,6 +12,7 @@
 #include "hal.h"
 
 #define ANGLE_ERROR 0xFFFF
+#define ACCELERATION_ERROR 0xFFFF
 #define MAX_RANGE 5760
 
 typedef enum {
@@ -135,5 +136,17 @@ extern int16_t getPitch(void);
  * @return The roll angle.
  */
 extern int16_t getRoll(void);
+
+extern int16_t getAccelerationX(void);
+
+extern int16_t getAccelerationY(void);
+
+extern int16_t getAccelerationZ(void);
+
+extern int16_t getGravityVectorX(void);
+
+extern int16_t getGravityVectorY(void);
+
+extern int16_t getGravityVectorZ(void);
 
 #endif /* IMUDRIVER_H */
