@@ -1,7 +1,6 @@
 /* The following code was greatly inspired and ported for STM32F302 from
 * tegesoft's library (https://github.com/tegesoft/flash-stm32f407) */
 
-#include "ch.h"
 #include "flash.h"
 #include <string.h>
 

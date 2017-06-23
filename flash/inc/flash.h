@@ -4,9 +4,7 @@
 #ifndef FLASH_H
 #define FLASH_H
 
-#include "ch.h"
 #include "hal.h"
-#include <stdint.h>
 
 /* ######### Error codes ######### */
 /* Flash operation successful */
