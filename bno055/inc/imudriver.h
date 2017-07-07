@@ -11,7 +11,7 @@
 
 #include "hal.h"
 
-#define ANGLE_ERROR 0xFFFF
+#define ANGLE_ERROR (int16_t)0xFFFF
 #define ACCELERATION_ERROR 0xFFFF
 #define MAX_RANGE 5760
 
