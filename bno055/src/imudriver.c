@@ -1,6 +1,7 @@
 #include "imudriver.h"
 #include "bno055.h"
 #include "tr_types.h"
+#include <string.h>
 
 /******************************************************************************/
 /*                            Local macro                                    */
@@ -10,7 +11,7 @@
 #define PAGE_0 0U
 
 #define TIMEOUT_I2C MS2ST(4)
-#define I2C_TX_BUFFER_SIZE 5U
+#define BUFFER_SIZE 5U
 
 #define DEGREE_MASK 0b11111011U
 #define RADIAN_MASK 0b00000100U
@@ -31,25 +32,27 @@
 /*                             Local variable                                 */
 /******************************************************************************/
 /**
- * Buffer to store the data to send through the I2C bus.
+ * Buffer to store the data to send/receive through the communication bus (I2C or UART).
  */
-static uint8_t i2c_tx_buffer[I2C_TX_BUFFER_SIZE];
+static uint8_t communication_buffer[BUFFER_SIZE];
 
 /**
- * Pointer to the I2C driver to use for the BNO055.
+ * Pointer to the driver to use for the BNO055.
  */
-static I2CDriver* bno055_i2c_driver_ptr;
-
+static CommunicationDriver* bno055_driver_ptr;
 /******************************************************************************/
 /*                           Global variables                                 */
 /******************************************************************************/
-const I2CConfig imu_i2c_conf = {
+#if IMU_PROTOCOL == I2C
+const I2CConfig imu_conf = {
 	0x20420F13, /* cf table 141 in reference manual for explanation */
 	0x00000001, /* peripheral enable */
 	0, /* nothing to do, all fields controlled by the driver */
 	NULL
 };
-
+#elif IMU_PROTOCOL == UART
+const SerialConfig imu_conf = {115200, 0, 0, 0};
+#endif /* COMMUNICATION PROTOCOL */
 /******************************************************************************/
 /*                             Private functions                              */
 /******************************************************************************/
@@ -68,13 +71,14 @@ const I2CConfig imu_i2c_conf = {
  * @retval INVALID_PARAMETER I2C driver not ready.
  * @retval UNKNOWN_ERROR An unknown error occured.
  */
+#if IMU_PROTOCOL == I2C
 static int32_t write_register(uint8_t addr, uint8_t reg_addr, uint8_t value) {
 	int32_t status;
 
-	i2c_tx_buffer[0] = reg_addr;
-	i2c_tx_buffer[1] = value;
-	if (bno055_i2c_driver_ptr->state == I2C_READY) {
-		status = i2cMasterTransmitTimeout(bno055_i2c_driver_ptr, addr, i2c_tx_buffer, 2, NULL, 0, TIMEOUT_I2C);
+	communication_buffer[0] = reg_addr;
+	communication_buffer[1] = value;
+	if (bno055_driver_ptr->state == I2C_READY) {
+		status = i2cMasterTransmitTimeout(bno055_driver_ptr, addr, communication_buffer, 2, NULL, 0, TIMEOUT_I2C);
 		switch (status) {
 		case MSG_RESET:
 			status = I2C_RESET;
@@ -95,7 +99,30 @@ static int32_t write_register(uint8_t addr, uint8_t reg_addr, uint8_t value) {
 
 	return status;
 }
+#elif IMU_PROTOCOL == UART
+static int32_t write_register(uint8_t addr, uint8_t reg_addr, uint8_t value) {
+	(void)addr; // Unused with UART protocol
 
+	communication_buffer[0] = 0xAA; //Start Byte
+	communication_buffer[1] = 0x00; //Write
+	communication_buffer[2] = reg_addr;
+	communication_buffer[3] = 1; //Length
+	communication_buffer[4] = value;
+
+	sdWrite(bno055_driver_ptr, communication_buffer, 5);
+	sdRead(bno055_driver_ptr, communication_buffer, 2);
+	if (communication_buffer[0] != 0xEE) {
+		return INVALID_DEVICE;
+	} else {
+		switch (communication_buffer[1]) {
+			case RET_WRITE_SUCCESS:
+				return NO_ERROR;
+			default:
+				return UNKNOWN_ERROR;
+		}
+	}
+}
+#endif
 /**
  * @brief Read the content of a register.
  *
@@ -115,14 +142,15 @@ static int32_t write_register(uint8_t addr, uint8_t reg_addr, uint8_t value) {
  * @retval I2C_TIMEOUT A timeout occured.
  * @retval UNKNOWN_ERROR An unknown error occured.
  */
+#if IMU_PROTOCOL == I2C
 static int32_t read_register(uint8_t addr, uint8_t reg_addr, uint8_t* data, uint8_t size) {
 	int32_t status;
 
-	if ((data == NULL) || (size == 0) || (bno055_i2c_driver_ptr->state != I2C_READY)) {
+	if ((data == NULL) || (size == 0) || (bno055_driver_ptr->state != I2C_READY)) {
 		status = INVALID_PARAMETER;
 	} else {
-		i2c_tx_buffer[0] = reg_addr;
-		status = i2cMasterTransmitTimeout(bno055_i2c_driver_ptr, addr, i2c_tx_buffer, 1, data, size, TIMEOUT_I2C);
+		communication_buffer[0] = reg_addr;
+		status = i2cMasterTransmitTimeout(bno055_driver_ptr, addr, communication_buffer, 1, data, size, TIMEOUT_I2C);
 
 		switch (status) {
 			case MSG_RESET:
@@ -142,7 +170,31 @@ static int32_t read_register(uint8_t addr, uint8_t reg_addr, uint8_t* data, uint
 
 	return status;
 }
+#elif IMU_PROTOCOL == UART
+static int32_t read_register(uint8_t addr, uint8_t reg_addr, uint8_t* data, uint8_t size) {
+		(void)addr; //Unused with UART protocol
 
+	if ((data == NULL) || (size == 0)) {
+		return INVALID_PARAMETER;
+	} else {
+		communication_buffer[0] = 0xAA; //Start byte
+		communication_buffer[1] = 0x01; //Read
+		communication_buffer[2] = reg_addr;
+		communication_buffer[3] = size;
+
+		sdWrite(bno055_driver_ptr, communication_buffer, 4);
+		sdRead(bno055_driver_ptr, communication_buffer, size + 2); //requested size + initial byte + length byte
+		if (communication_buffer[0] == 0xEE) {
+			return communication_buffer[1];
+		} else if (communication_buffer[0] != 0xBB) {
+			return INVALID_DEVICE;
+		} else {
+			memcpy(data, &communication_buffer[2], size);
+			return NO_ERROR;
+		}
+	}
+}
+#endif
 /**
  * @brief Change the mode in which the BNO055 operates.
  *
@@ -165,16 +217,16 @@ static int32_t setMode(bno055_opmode_t mode) {
 /******************************************************************************/
 /*                              Public functions                              */
 /******************************************************************************/
-extern int initIMU(I2CDriver* i2c_driver) {
+extern int initIMU(CommunicationDriver* driver) {
     uint8_t id;
     int32_t ret_msg;
 
     /* Check parameters */
-    if (i2c_driver == NULL) {
+    if (driver == NULL) {
         return INVALID_PARAMETER;
     }
 
-	bno055_i2c_driver_ptr = i2c_driver;
+	bno055_driver_ptr = driver;
 
 	/* Make sure we have the right device */
 	ret_msg = read_register(BNO055_ADDRESS, BNO055_CHIP_ID_ADDR, &id, 1);

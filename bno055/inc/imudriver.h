@@ -14,6 +14,9 @@
 #define ANGLE_ERROR 0xFFFF
 #define MAX_RANGE 5760
 
+/* UART return codes */
+#define RET_WRITE_SUCCESS 0x01
+
 typedef enum {
     CLOCKWISE = 0U,
     COUNTER_CLOCKWISE = 1U
@@ -29,10 +32,19 @@ typedef enum {
     ANDROID = 1U
 } imu_format_t;
 
+#if IMU_PROTOCOL == I2C
 /**
  * Configuration for the I2C driver.
  */
-extern const I2CConfig imu_i2c_conf;
+extern const I2CConfig imu_conf;
+#define CommunicationDriver I2CDriver
+#elif IMU_PROTOCOL == UART
+/**
+* Configuration for the Serial driver.
+*/
+extern const SerialConfig imu_conf;
+#define CommunicationDriver SerialDriver
+#endif
 
 /**
  * @brief Initialize the bno055 and set it in IMU mode (fusion between accelerometer and gyro).
@@ -41,7 +53,7 @@ extern const I2CConfig imu_i2c_conf;
  *          UNLESS the initMotorDriver() was called : in that case calling
  *          initIMU() is redundant.
  *
- * @param[in] A pointer to the I2C driver to use to communicate with the device.
+ * @param[in] A pointer to the I2C/UART driver to use to communicate with the device.
  *
  * @return An int indicating success or failure.
  * @retval NO_ERROR  Success.
@@ -51,8 +63,7 @@ extern const I2CConfig imu_i2c_conf;
  * @retval I2C_TIMEOUT Timeout during the I2C exchange.
  * @retval UNKNWON_ERROR An unknown error occured.
  */
-extern int initIMU(I2CDriver* i2c_driver);
-
+extern int initIMU(CommunicationDriver* i2c_driver);
 /**
  * @brief Set the unit of the euler angles.
  *
