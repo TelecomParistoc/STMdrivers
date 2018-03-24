@@ -9,7 +9,13 @@ in the future to provide other functions, according to the needs.
    - Set the USE_BNO055 symbol to TRUE in the drivers.mk file
    - Include the drivers.mk file in the main Makefile of your project (use the
        other includes as model to do this)
-   - Add $(DRVSRC) in CSRC and $(DRVINC) in INCDIR
+   - Add ```$(DRVSRC)``` in ```CSRC``` and ```$(DRVINC)``` in ```INCDIR```
+   - Select the communication protocol to use. For this, simply add the following
+elements to the ```UDEFS``` variable in your makefile:
+            ${DRIVERDEFS} -DIMU_PROTOCOL=${<PROTOCOL_NAME>}
+Replace PROTOCOL_NAME by the protocol that you want to use. For the moment, UART
+and I2C are supported.
+
    And that's all. Easy, no?
    Simply include imudriver.h in your source code files to use the API.
 
