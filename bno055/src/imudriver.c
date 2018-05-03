@@ -101,6 +101,7 @@ static int32_t write_register(uint8_t addr, uint8_t reg_addr, uint8_t value) {
 }
 #elif IMU_PROTOCOL == UART
 static int32_t write_register(uint8_t addr, uint8_t reg_addr, uint8_t value) {
+	uint8_t bytes;
 	(void)addr; // Unused with UART protocol
 
 	communication_buffer[0] = 0xAA; //Start Byte
@@ -108,10 +109,11 @@ static int32_t write_register(uint8_t addr, uint8_t reg_addr, uint8_t value) {
 	communication_buffer[2] = reg_addr;
 	communication_buffer[3] = 1; //Length
 	communication_buffer[4] = value;
-
 	sdWrite(bno055_driver_ptr, communication_buffer, 5);
-	sdRead(bno055_driver_ptr, communication_buffer, 2);
-	if (communication_buffer[0] != 0xEE) {
+	bytes = sdReadTimeout(bno055_driver_ptr, communication_buffer, 2, MS2ST(200));
+	if (bytes != 2) {
+		return TIMEOUT;
+	} else if (communication_buffer[0] != 0xEE) {
 		return INVALID_DEVICE;
 	} else {
 		switch (communication_buffer[1]) {
@@ -172,8 +174,10 @@ static int32_t read_register(uint8_t addr, uint8_t reg_addr, uint8_t* data, uint
 }
 #elif IMU_PROTOCOL == UART
 static int32_t read_register(uint8_t addr, uint8_t reg_addr, uint8_t* data, uint8_t size) {
-		(void)addr; //Unused with UART protocol
+	(void)addr; //Unused with UART protocol
+	uint8_t bytes;
 
+	chThdSleepMilliseconds(1);
 	if ((data == NULL) || (size == 0)) {
 		return INVALID_PARAMETER;
 	} else {
@@ -183,13 +187,16 @@ static int32_t read_register(uint8_t addr, uint8_t reg_addr, uint8_t* data, uint
 		communication_buffer[3] = size;
 
 		sdWrite(bno055_driver_ptr, communication_buffer, 4);
-		sdRead(bno055_driver_ptr, communication_buffer, size + 2); //requested size + initial byte + length byte
-		if (communication_buffer[0] == 0xEE) {
+		bytes = sdReadTimeout(bno055_driver_ptr, communication_buffer, 2, MS2ST(200)); // initial byte + length byte
+		if (bytes != 2) {
+			return TIMEOUT;
+		} else if (communication_buffer[0] == 0xEE) {
 			return communication_buffer[1];
 		} else if (communication_buffer[0] != 0xBB) {
 			return INVALID_DEVICE;
 		} else {
-			memcpy(data, &communication_buffer[2], size);
+			sdReadTimeout(bno055_driver_ptr, communication_buffer, size, MS2ST(200));
+			memcpy(data, &communication_buffer[0], size);
 			return NO_ERROR;
 		}
 	}
@@ -244,7 +251,8 @@ extern int initIMU(CommunicationDriver* driver) {
 
 	/* Reset */
 	ret_msg = write_register(BNO055_ADDRESS, BNO055_SYS_TRIGGER_ADDR, SYS_TRIGGER_RST_SYS);
-	if (ret_msg != NO_ERROR) {
+	if ((ret_msg != NO_ERROR) && (ret_msg != TIMEOUT)) {
+		// For that register, tests have shown that only 1 byte is returned
 		return 3;
 	}
 
@@ -383,7 +391,6 @@ extern int16_t getHeading(void)
 	if (status != NO_ERROR)	{
 		raw_angle = ANGLE_ERROR;
 	} else {
-
 		status = read_register(BNO055_ADDRESS, BNO055_EULER_H_LSB_ADDR, (uint8_t*)&raw_angle, 1);
 
 		if (status != NO_ERROR) {
